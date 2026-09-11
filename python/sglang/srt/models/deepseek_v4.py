@@ -513,12 +513,13 @@ def _apply_wo_a_bf16_matmul(
         or hip_decode_verify
         or (hip_fast_path and is_prefill and 4096 <= o.shape[0] <= 65536)
     ) and (
-        o.shape[1:] == (2, 4096)
-        and wo_a.shape == (2, 1024, 4096)
+        and o.shape[2] == 4096
+        and o.shape[1] in (1, 2)
+        and wo_a.shape == (o.shape[1], 1024, 4096)
         and o.dtype == wo_a.dtype == torch.bfloat16
         and o.stride(2) == 1
         and o.stride(1) == 4096
-        and o.stride(0) >= 8192
+        and o.stride(0) >= 4096 * o.shape[1]
         and wo_a.is_contiguous()
     ):
         if is_decode and o.shape[0] == 1:
