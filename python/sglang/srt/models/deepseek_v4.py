@@ -72,7 +72,9 @@ from sglang.srt.layers.cp.cp_decode_attn_tp import get_cp_decode_attn_tp_ctx
 from sglang.srt.layers.cp.interleave import attn_cp_interleave_gather
 from sglang.srt.layers.cp.utils import (
     cp_gather_full_sequence_states,
+    cp_interleave_input_ids,
     cp_materialize_global_token_order,
+    cp_shard_hidden_states,
     is_cp_active,
 )
 from sglang.srt.layers.deep_gemm_wrapper.configurer import DEEPGEMM_SCALE_UE8M0
@@ -4142,6 +4144,11 @@ class DeepseekV4Model(nn.Module):
         cp_extend = (
             is_cp_active(forward_batch) and forward_batch.forward_mode.is_extend()
         )
+        local_input_ids = (
+            cp_shard_hidden_states(forward_batch.input_ids, forward_batch)
+            if cp_extend
+            else input_ids
+        )
         if self.engram_hasher is not None:
             if cp_extend:
                 # n-gram hashing needs each token's predecessors: hash the whole prompt
@@ -4198,11 +4205,18 @@ class DeepseekV4Model(nn.Module):
             if tail is not None and i == self.late_layer_start:
                 # Decode reaches back at most SWA_WINDOW positions.
                 saved_full = attn_backend.enter_late_layer_tail(forward_batch)
-                state = state.take_rows(tail.rows)
-                input_ids, input_ids_global = (
-                    tail.rows(input_ids),
-                    tail.rows(input_ids_global),
-                )
+                hidden_states = tail.rows(hidden_states)
+                prev_pre = tail.rows(prev_pre)
+                local_input_ids = tail.rows(local_input_ids)
+                if tail.cp_metadata is not None:
+                    tail_input_ids = forward_batch.input_ids[tail.output_token_indices]
+                    input_ids = cp_interleave_input_ids(tail_input_ids, forward_batch)
+                    input_ids_global = input_ids
+                else:
+                    input_ids = tail.rows(input_ids)
+                    input_ids_global = tail.rows(input_ids_global)
+                    local_input_ids = input_ids
+
                 positions = tail.positions
                 if hash_ids is not None:
                     hash_ids = tail.rows(hash_ids)
@@ -4228,7 +4242,7 @@ class DeepseekV4Model(nn.Module):
                     and forward_batch.contains_mm_inputs()
                 ):
                     hidden_states = torch.where(
-                        (input_ids == self.config.image_token_id)[:, None, None],
+                        (local_input_ids == self.config.image_token_id)[:, None, None],
                         before_engram,
                         hidden_states,
                     )
@@ -4622,6 +4636,7 @@ class DeepseekV4ForCausalLM(nn.Module):
                     "supported yet"
                 )
 
+
             args = SimpleNamespace(**vars(config), dim=config.hidden_size)
             self.vision = ViT(args)
             self.aligner = Aligner(args)
@@ -4923,6 +4938,7 @@ class DeepseekV4ForCausalLM(nn.Module):
         input_ids, input_embeds = self.prepare_language_model_inputs(
             input_ids, forward_batch, input_embeds
         )
+
         with get_attn_tp_context().maybe_input_scattered(forward_batch):
             hidden_states = self.model.forward(
                 input_ids, positions, forward_batch, input_embeds, pp_proxy_tensors
@@ -4960,7 +4976,7 @@ class DeepseekV4ForCausalLM(nn.Module):
             ),
         )
         if tail is not None:
-            output.hidden_states_token_indices = tail.token_indices
+            output.hidden_states_token_indices = tail.output_token_indices
         return output
 
     def _setup_fp8_wo_a_scales(self, is_nextn: bool) -> None:
