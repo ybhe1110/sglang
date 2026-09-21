@@ -253,7 +253,7 @@ def _publish_prefill_blocks(
     blocks = torch.full(
         (data.num_rows, width), -1, dtype=torch.int32, device=selected.device
     )
-    for tile, logits in score_tiles(data, kv, width_align=4):
+    for tile, logits in score_tiles(data, kv, width_align=32):
         _publish_tile_blocks(
             data=data,
             tile=tile,
@@ -289,12 +289,21 @@ def _publish_tile_blocks(
             torch.arange(lc, device=logits.device)[None, :] >= lens[rows, None],
             -torch.inf,
         )
-        ids = select_candidate_block_ids(
-            logits=scores,
-            compress_lens=lens[rows, None],
-            topk_blocks=topk_blocks,
-            block_size=block_size,
-        )
+        if block_size == 8:
+            ids = amax_topk_blocks(
+                logits=logits[rows, : -(-lc // 32) * 32],
+                seq_lens=lens[rows],
+                nblocks=(lens[rows] + 7) // 8,
+                topk_blocks=blocks.shape[1],
+                max_seq_len=lc,
+            )
+        else:
+            ids = select_candidate_block_ids(
+                logits=scores,
+                compress_lens=lens[rows, None],
+                topk_blocks=topk_blocks,
+                block_size=block_size,
+            )
         blocks[rows, : ids.shape[1]] = ids
 
 
