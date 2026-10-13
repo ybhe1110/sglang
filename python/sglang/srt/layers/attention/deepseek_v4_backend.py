@@ -3211,7 +3211,7 @@ class DeepseekV4AttnBackend(
                 is_source = is_consumer = False
 
             inputs = self._make_low_ratio_decode_indexer_inputs(
-                layer, x, q_lora, req, pos, mode
+                layer, x, q_lora, req, pos, forward_batch
             )
             if is_source:
                 published = self.decode_candidates.publish_decode(inputs)
@@ -3259,7 +3259,9 @@ class DeepseekV4AttnBackend(
         )
         self.full_topk_indexer.topk_prefill_captured(inputs)
 
-    def _make_low_ratio_decode_indexer_inputs(self, layer, x, q_lora, req, pos, mode):
+    def _make_low_ratio_decode_indexer_inputs(
+        self, layer, x, q_lora, req, pos, forward_batch
+    ):
         ratio = layer.compress_ratio
         metadata = (
             self.forward_metadata.c1_indexer_metadata
@@ -3267,6 +3269,24 @@ class DeepseekV4AttnBackend(
             else self.forward_metadata.c2_indexer_metadata
         )
         assert metadata is not None, f"no decode indexer metadata for {ratio = }"
+        group_size = 1
+        if (
+            envs.SGLANG_OPT_DSV41_SM90_GROUPED_INDEXER.get()
+            and forward_batch.forward_mode.is_target_verify()
+            and not self.is_dspark_draft
+            and read_ragged_verify_mode() is RaggedVerifyMode.STATIC
+            and self.forward_metadata.late_layer_tail is None
+            and self.speculative_num_draft_tokens is not None
+            and self.speculative_num_draft_tokens > 1
+            and forward_batch.spec_info.draft_token_num
+            == self.speculative_num_draft_tokens
+            and req.shape[0]
+            == forward_batch.batch_size * self.speculative_num_draft_tokens
+            and x.shape[0] == q_lora.shape[0] == req.shape[0]
+        ):
+            # Only static verify guarantees fixed request-major groups.
+            # Do not read GPU request ids or lengths during graph capture.
+            group_size = self.speculative_num_draft_tokens
         return DecodeInputs(
             indexer=layer.indexer,
             layer_id=layer.layer_id,
@@ -3277,10 +3297,11 @@ class DeepseekV4AttnBackend(
             positions=pos,
             req_rows=req,
             paged_metadata=metadata,
-            is_verify=mode.is_target_verify(),
+            is_verify=forward_batch.forward_mode.is_target_verify(),
             out_page_indices=self.forward_metadata.core_metadata.sparse_page_indices(
                 ratio
             ),
+            group_size=group_size,
         )
 
     def _make_low_ratio_prefill_indexer_inputs(

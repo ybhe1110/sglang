@@ -3,7 +3,7 @@ its best blocks, a consumer takes its top-k among them."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import msgspec
 import torch
@@ -27,6 +27,7 @@ from .scoring import (
     write_decode,
     write_prefill,
 )
+from .sm90_decode import CandidateBlocks, try_sm90_decode
 from .types import (
     CandidateMetadata,
     DecodeInputs,
@@ -91,6 +92,14 @@ class DenseBlocksBackend:
             self._torch_consume_prefill(inputs, published)
 
     def publish_decode(self, inputs: DecodeInputs):
+        handled, published = try_sm90_decode(
+            inputs=inputs,
+            token_to_kv_pool=self.token_to_kv_pool,
+            req_to_token=self.req_to_token,
+            is_source=True,
+        )
+        if handled:
+            return published
         d = decode_scores(
             inputs=inputs,
             token_to_kv_pool=self.token_to_kv_pool,
@@ -126,8 +135,29 @@ class DenseBlocksBackend:
     def consume_decode(
         self,
         inputs: DecodeInputs,
-        published: Optional[BlockIds],
+        published: Optional[Union[BlockIds, CandidateBlocks]],
     ) -> None:
+        handled, _ = try_sm90_decode(
+            inputs=inputs,
+            token_to_kv_pool=self.token_to_kv_pool,
+            req_to_token=self.req_to_token,
+            is_consumer=True,
+            published=published,
+        )
+        if handled:
+            return
+        # A compact source can outlive a consumer's fast-path eligibility.
+        # Rebuild the mask from this replay's block IDs before the dense fallback.
+        if published is not None and not self.use_triton_candidates:
+            published = BlockIds(
+                blocks=published.blocks,
+                decode_mask=candidate_block_mask(
+                    published.blocks,
+                    min(inputs.paged_metadata.max_compressed_seq_len,
+                        self.req_to_token.shape[1] // inputs.compress_ratio),
+                    self.block_size,
+                ),
+            )
         d = decode_scores(
             inputs=inputs,
             token_to_kv_pool=self.token_to_kv_pool,
