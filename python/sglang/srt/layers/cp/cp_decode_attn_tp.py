@@ -157,7 +157,7 @@ class CpDecodeAttnTpContext:
             return []
 
         attrs = [(linear_instance, "weight", dim)]
-        for scale_name in ("weight_scale_inv", "weight_scale"):
+        for scale_name in ("weight_scale_inv", "weight_scale", "_block_fp8_bf16_weight"):
             if getattr(linear_instance, scale_name, None) is not None:
                 attrs.append((linear_instance, scale_name, dim))
         return attrs

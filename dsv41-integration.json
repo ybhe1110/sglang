@@ -1,0 +1,34 @@
+{
+  "branch": "dsv4.1",
+  "base": "main",
+  "selection_policy": {
+    "vision_cp_first": "40219",
+    "bounded_replay_tail_only": "40161",
+    "duplicate_diffs": ["40436"]
+  },
+  "applied_prs": {
+    "39306": "H20-3e block32 FP8 path, tests and benchmark",
+    "41098": "H20-3e block32 FP8 tuning tables",
+    "40219": "single-node vision CP and image-owner encoding",
+    "40161": "CP metadata for the bounded-replay tail; no PD path",
+    "40860": "SM90 candidate scoring",
+    "40945": "length-aware compact candidate indexer",
+    "41561": "SM90 DeepSelect full top-k",
+    "39114": "SM90 TP8 wo_a GEMV gate and large-M H200 entries",
+    "40160": "opt-in SM90 grouped FP4 H64/D128 experiment",
+    "40421": "shared compressed-KV dequantization",
+    "40521": "CUDA amax8_varlen/topk_transform_paged_v2 candidate selection",
+    "40919": "DSpark folded-result buffer reuse fencing",
+    "40758": "ASCII escaping for the literal DSV4.1 image placeholder",
+    "42365": "Hopper prefill indexer fused Triton scoring with Torch fallback"
+  },
+  "intentionally_not_enabled": {
+    "40160": "not wired into default service dispatch",
+    "medium_mhc": "left disabled",
+    "unsupported_shapes": "retain existing fallback paths"
+  },
+  "verification": {
+    "gpu": false,
+    "notes": "Static checks and CPU boundary checks are run where dependencies permit; SM90 Triton/CUDA execution requires a matching GPU environment."
+  }
+}

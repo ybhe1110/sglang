@@ -408,3 +408,23 @@ for _fn in ("fp4_index_logits_paged", "finish_paged_indexer_topk"):
         )
     )
 del _fn
+
+# Optional SM90 DSV4.1 candidate/indexer paths. Fallbacks remain available.
+for _mod, _fn, _backend in [
+    ("dsv4.candidate_bf16_mqa", "candidate_bf16_mqa_logits", KernelBackend.TRITON),
+    ("dsv4.sm90_fp4_indexer", "fp4_index_logits_mapped_sm90", KernelBackend.TRITON),
+    ("dsv4.sm90_fp4_topk", "sort_map_topk", KernelBackend.TRITON),
+    ("dsv4.sm90_length_aware_indexer", "prefix_logits", KernelBackend.TRITON),
+    ("dsv4.sm90_length_aware_indexer", "select_prefix_topk", KernelBackend.TRITON),
+    ("dsv4.sm90_length_aware_indexer", "candidate_blocks", KernelBackend.TRITON),
+    ("dsv4.sm90_length_aware_indexer", "materialize_candidate_mask", KernelBackend.TRITON),
+    ("dsv4.sm90_fp4_grouped_indexer", "fp4_index_logits_grouped_sm90", KernelBackend.JIT),
+]:
+    register_kernel(
+        KernelSpec(
+            op=f"attention.{_fn}", backend=_backend,
+            target=f"sglang.kernels.ops.attention.{_mod}:{_fn}",
+            capabilities=frozenset({CapabilityRequirement.cuda(min_sm=(9, 0), max_sm=(9, 0))}),
+        )
+    )
+del _mod, _fn, _backend

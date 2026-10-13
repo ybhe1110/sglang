@@ -148,7 +148,11 @@ class DenseBlocksBackend:
             return
         # A compact source can outlive a consumer's fast-path eligibility.
         # Rebuild the mask from this replay's block IDs before the dense fallback.
-        if published is not None and not self.use_triton_candidates:
+        if (
+            published is not None
+            and not self.use_triton_candidates
+            and (isinstance(published, CandidateBlocks) or published.decode_mask is None)
+        ):
             published = BlockIds(
                 blocks=published.blocks,
                 decode_mask=candidate_block_mask(

@@ -8,7 +8,7 @@ import unittest
 
 import torch
 
-from sglang.kernels.ops.quantization.fp8_kernel import (
+from sglang.kernels.ops.gemm.fp8_kernel import (
     get_w8a8_block_fp8_configs,
     w8a8_block_fp8_matmul_triton,
 )
@@ -43,13 +43,14 @@ class TestH20BlockFP8Configs(unittest.TestCase):
             )
         torch.backends.cuda.matmul.allow_tf32 = False
 
-    def test_untuned_batch_sizes_keep_default(self):
+    def test_tuning_tables_have_valid_launch_parameters(self):
         for n, k in SHAPES:
             configs = get_w8a8_block_fp8_configs(n, k, 32, 32)
             self.assertIsNotNone(configs, (n, k))
-            for m in [0, *range(65, 8193), 32768, 131072, 1048576]:
-                selected = configs[min(configs, key=lambda key: abs(key - m))]
-                self.assertEqual(selected, DEFAULT_CONFIG, (m, n, k))
+            for m, selected in configs.items():
+                self.assertGreaterEqual(m, 0)
+                self.assertEqual(32 % selected["BLOCK_SIZE_K"], 0)
+                self.assertIn(selected.get("SPLIT_K", 1), (1, 2, 4, 8, 16, 32))
 
     def test_all_decode_batches_against_fp32(self):
         # Independent seeds and both scale strides exercise masked M tails,

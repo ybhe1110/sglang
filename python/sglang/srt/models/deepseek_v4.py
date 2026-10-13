@@ -72,9 +72,7 @@ from sglang.srt.layers.cp.cp_decode_attn_tp import get_cp_decode_attn_tp_ctx
 from sglang.srt.layers.cp.interleave import attn_cp_interleave_gather
 from sglang.srt.layers.cp.utils import (
     cp_gather_full_sequence_states,
-    cp_interleave_input_ids,
     cp_materialize_global_token_order,
-    cp_shard_hidden_states,
     is_cp_active,
 )
 from sglang.srt.layers.deep_gemm_wrapper.configurer import DEEPGEMM_SCALE_UE8M0
@@ -4144,11 +4142,8 @@ class DeepseekV4Model(nn.Module):
         cp_extend = (
             is_cp_active(forward_batch) and forward_batch.forward_mode.is_extend()
         )
-        local_input_ids = (
-            cp_shard_hidden_states(forward_batch.input_ids, forward_batch)
-            if cp_extend
-            else input_ids
-        )
+        # The runner already sharded and canonicalized the model IDs.
+        local_input_ids = input_ids
         if self.engram_hasher is not None:
             if cp_extend:
                 # n-gram hashing needs each token's predecessors: hash the whole prompt
@@ -4207,14 +4202,21 @@ class DeepseekV4Model(nn.Module):
                 saved_full = attn_backend.enter_late_layer_tail(forward_batch)
                 state = state.take_rows(tail.rows)
                 local_input_ids = tail.rows(local_input_ids)
+                input_ids = local_input_ids
                 if tail.cp_metadata is not None:
-                    tail_input_ids = forward_batch.input_ids[tail.output_token_indices]
-                    input_ids = cp_interleave_input_ids(tail_input_ids, forward_batch)
-                    input_ids_global = input_ids
+                    # Restore rank-major routing IDs using the original ownership.
+                    # A tail starting between CP ranks is not a fresh interleave.
+                    logical_ids = cp_gather_full_sequence_states(
+                        local_input_ids, forward_batch, torch.cuda.current_stream()
+                    )
+                    input_ids_global = local_input_ids.new_zeros(
+                        sum(tail.cp_metadata.per_rank_actual_token)
+                    )
+                    input_ids_global.index_copy_(
+                        0, tail.cp_metadata.gather_index, logical_ids
+                    )
                 else:
-                    input_ids = tail.rows(input_ids)
                     input_ids_global = tail.rows(input_ids_global)
-                    local_input_ids = input_ids
 
                 positions = tail.positions
                 if hash_ids is not None:

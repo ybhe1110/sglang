@@ -3337,6 +3337,12 @@ class DeepseekV4AttnBackend(
         else:
             rows_per_request = _as_int_list(forward_batch.extend_seq_lens_cpu)
             rows_per_request_device = forward_batch.extend_seq_lens
+        if req is None:
+            req = torch.repeat_interleave(
+                forward_batch.req_pool_indices.to(torch.int64),
+                rows_per_request_device.to(torch.int64),
+                output_size=pos.shape[0],
+            )
         return PrefillInputs(
             indexer=layer.indexer,
             layer_id=layer.layer_id,

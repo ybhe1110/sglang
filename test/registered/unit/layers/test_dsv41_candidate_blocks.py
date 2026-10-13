@@ -157,7 +157,7 @@ class TestSm90CandidateCompatibility(CustomTestCase):
         )
         backend = dense_blocks.DenseBlocksBackend(
             token_to_kv_pool=None,
-            req_to_token=None,
+            req_to_token=slots.to(torch.int32),
             candidate_topk_blocks=2,
             candidate_block_size=2,
             use_deep_gemm_prefill=False,
@@ -191,18 +191,22 @@ class TestSm90CandidateCompatibility(CustomTestCase):
             with self.subTest(
                 enabled=enabled, verify=verify, group_size=group_size, ratio=ratio
             ):
+                out = torch.full((2, 3), 42, dtype=torch.int32)
                 with envs.SGLANG_OPT_DSV41_SM90_GROUPED_INDEXER.override(enabled):
                     handled, published = try_sm90_decode(
                         inputs=SimpleNamespace(
                             compress_ratio=ratio,
                             is_verify=verify,
                             group_size=group_size,
+                            out_page_indices=out,
+                            reset_outputs=lambda: out.fill_(-1),
                         ),
                         token_to_kv_pool=None,
                         req_to_token=None,
                     )
                 self.assertFalse(handled)
                 self.assertIsNone(published)
+                self.assertTrue((out == 42).all())
 
 
 if __name__ == "__main__":

@@ -351,6 +351,7 @@ def _score_chunks(
     # The torch prefill indexer flag asks for the torch oracle, not this kernel.
     fused = (
         q.is_cuda
+        and get_platform().is_sm90
         and envs.SGLANG_OPT_USE_FUSED_DSV41_INDEXER_SCORES.get()
         and not envs.SGLANG_DSV41_TORCH_PREFILL_INDEXER.get()
     )

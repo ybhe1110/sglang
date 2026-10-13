@@ -391,11 +391,3 @@ def _validate_deepseek_v41_vision_prefill_cp(server_args: ServerArgs) -> None:
         logger.warning(
             "Disabling the prefill CUDA graph for DeepSeek-V4.1 vision with prefill CP."
         )
-    if (
-        str(cfg.speculative_algorithm).upper() == "DSPARK"
-        and cfg.enable_decoder_swa_bounded_replay
-    ):
-        raise ValueError(
-            "DeepSeek-V4.1 vision with prefill CP does not support DSpark together "
-            "with --enable-decoder-swa-bounded-replay yet."
-        )

@@ -3463,16 +3463,6 @@ class TestGrpcServerArgs(CustomTestCase):
     def test_start_sidecar_passes_endpoint_and_provider_argv_separately(self):
         from sglang.srt.runtime_context import get_context as get_context_for_config
 
-        server_args = SimpleNamespace(
-            sidecar="example.sidecar",
-            sidecar_args=[
-                "--sidecar-shutdown-timeout",
-                "42",
-                "--grpc-connections",
-                "2",
-            ],
-            host="127.0.0.1",
-        )
         # Every value the sidecar reads is resolved config, so the case states
         # them all through the context rather than half here and half in a
         # stand-in the readers no longer consult.
@@ -4424,19 +4414,19 @@ class TestDeepseekV41VisionPrefillCPArgs(CustomTestCase):
                 dict(prefill_backend=Backend.BREAKABLE, lock_prefill_backend=True),
                 "runs eager prefill",
             ),
-            (
-                dict(
-                    speculative_algorithm="DSPARK",
-                    enable_decoder_swa_bounded_replay=True,
-                ),
-                "DSpark.*decoder-swa-bounded-replay",
-            ),
         ):
             args = self._args(
                 max_running_requests=4, chunked_prefill_size=128, **overrides
             )
             with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
                 handle_model_specific_adjustments(args)
+
+    @override_platform(is_cuda=True, is_hip=False)
+    def test_vision_cp_dspark_decoder_replay_is_accepted(self):
+        validate_deepseek_v41_features(self._args(
+            speculative_algorithm="DSPARK",
+            enable_decoder_swa_bounded_replay=True,
+        ))
 
     def test_text_zigzag_and_default_prefill_graph_are_accepted(self):
         validate_deepseek_v41_features(
