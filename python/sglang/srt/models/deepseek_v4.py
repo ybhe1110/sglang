@@ -515,7 +515,7 @@ def _apply_wo_a_bf16_matmul(
         or hip_decode_verify
         or (hip_fast_path and is_prefill and 4096 <= o.shape[0] <= 65536)
     ) and (
-        and o.shape[2] == 4096
+        o.shape[2] == 4096
         and (o.shape[1] == 2 or (o.shape[1] == 1 and get_platform().is_sm90))
         and wo_a.shape == (o.shape[1], 1024, 4096)
         and o.dtype == wo_a.dtype == torch.bfloat16
@@ -4205,8 +4205,7 @@ class DeepseekV4Model(nn.Module):
             if tail is not None and i == self.late_layer_start:
                 # Decode reaches back at most SWA_WINDOW positions.
                 saved_full = attn_backend.enter_late_layer_tail(forward_batch)
-                hidden_states = tail.rows(hidden_states)
-                prev_pre = tail.rows(prev_pre)
+                state = state.take_rows(tail.rows)
                 local_input_ids = tail.rows(local_input_ids)
                 if tail.cp_metadata is not None:
                     tail_input_ids = forward_batch.input_ids[tail.output_token_indices]
